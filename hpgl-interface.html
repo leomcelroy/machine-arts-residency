@@ -1,0 +1,491 @@
+<style>
+  html,body {
+    margin: 0px;
+    padding: 0px;
+  }
+  button {
+    margin: 5px;
+  }
+  
+  main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: none;
+  }
+  
+  textarea {
+    height: 300px;
+    width: 100%;
+    height: 50%;
+    resize: none;
+  }
+
+  #drop-area {
+      border: 2px dashed #ccc;
+      width: 95%;
+      height: 40%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      margin: auto;
+      box-sizing: border-box;
+  }
+  
+  #drop-area.hover {
+    background: lightgrey;
+  }
+</style>
+
+<main>
+  <button class="connect">connect</button>
+  <textarea>
+  [
+    "IN;",
+    "SP1;",
+    "PU;",
+    "PA0,0;",
+    "PD;",
+    "PA15992,0;",
+    "PA15992,10160;",
+    "PA0,10160;",
+    "PA0,0;",
+    "PU;"
+  ]
+  </textarea>
+  <button class="send">send</button>
+  <div id="drop-area">Drop svg here</div>
+</main>
+
+<script defer type="module">
+import { flattenSVG } from 'https://cdn.jsdelivr.net/npm/flatten-svg@0.3.0/+esm'
+
+const paperW = 11*25.4;
+const paperH = 17*25.4;
+
+const wMargin = 12;
+const hMargin = 16;
+
+const workarea = [
+  paperW-wMargin*2,
+  paperH-hMargin*2,
+].map(x => x/25.4)
+
+  console.log(workarea);
+  
+let coms;
+let msgPromises = {};
+
+function strToBytes(str) {
+  const textEncoder = new TextEncoder();
+  return textEncoder.encode(str);
+}
+
+function wait(milliseconds) {
+    return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function send(bytes) {
+  await coms.write(bytes);
+  await wait(20);
+} 
+
+async function sendCmds(cmds, maxCmds = 1) {
+  // const bytes = strToBytes(arr.map(x => x.replaceAll(/\s/g, "")).join(""));
+
+  const formatted = cmds.map(x => x.replaceAll(/\s/g, ""));
+
+  const groups = groupBy(formatted, maxCmds);
+
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    console.log("sending", group);
+    let bytes = group.join("");
+    bytes = strToBytes(bytes);
+    
+    if (coms) await send(bytes);
+  }  
+}
+
+async function main() {
+  const port = await navigator.serial.requestPort();
+  coms = await createWebSerialBuffer(port);
+
+  const TERMINATOR = 13;
+  let msg = [];
+  
+  setInterval(() => {
+    
+    while(coms.available()) {
+      const byte = coms.read();
+      
+      msg.push(byte);
+      
+      if (byte === TERMINATOR) {
+        const msgString = String.fromCharCode.apply(null, msg);
+        const [ x, y, pen ] = msgString.trim().split(",");
+        console.log("msg:", { msg, msgString, x, y, pen });
+        
+        msg = [];
+      }
+    }
+  }, 0);
+}
+
+document.querySelector(".connect").addEventListener("click", () => {
+  main();
+})
+
+  
+document.querySelector(".send").addEventListener("click", async () => {
+  const ta = document.querySelector("textarea");
+  const val = ta.value;
+  const arr = JSON.parse(val);
+
+ // const bytes = strToBytes(arr.map(x => x.replaceAll(/\s/g, "")).join(""));
+
+  sendCmds(arr);
+})
+  
+async function createWebSerialBuffer(port, baudrate = 9600) {
+
+  const buffer = [];
+
+  await port.open({ baudRate: baudrate });
+
+  let reader = null;
+  let writer = null;
+
+  async function stuffBuffer() {
+    try  {
+      while (port.readable) {
+        reader = port.readable.getReader();
+
+        while (true) {
+          const { value, done } = await reader.read();
+
+          if (value) {
+            for (let i = 0; i < value.length; i++) {
+              buffer.push(value[i]);
+            }
+          }
+
+          if (done) {
+            reader.releaseLock();
+            reader = null;
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      // await port.close();
+    }
+  }
+
+  stuffBuffer();
+
+  async function write(msg) {
+    console.log("writing", msg);
+    writer = port.writable.getWriter();
+    await writer.write(msg);
+    writer.releaseLock();
+    writer = null;
+    console.log("wrote");
+  }
+
+  return {
+    write,
+    read: () => buffer.length > 0 ? buffer.shift() : null,
+    available: () => buffer.length > 0,
+    close: async () => {
+      if (reader) {
+        reader.releaseLock();
+      }
+
+      if (writer) {
+        writer.releaseLock();
+      }
+    
+      await port.close();
+
+      return;
+    }
+  }
+} 
+
+function bytesToFloat(bytes) {
+    if (bytes.length !== 4) {
+        throw new Error('There must be 4 bytes in the input array');
+    }
+
+    const buffer = new ArrayBuffer(4);
+    const view = new DataView(buffer);
+    
+    // Write the bytes to the buffer
+    bytes.forEach((b, i) => view.setUint8(i, b));
+    
+    // Get back the bytes as a float
+    return view.getFloat32(0, false); // Change to true for little endian encoding
+}
+
+function floatToBytes(float) {
+    const buffer = new ArrayBuffer(4);
+    const view = new DataView(buffer);
+    
+    view.setFloat32(0, float, false); // Change to true for little endian encoding
+    
+    const bytes = new Uint8Array(buffer);
+    
+    return Array.from(bytes);
+}
+
+function bytesToInt(bytes) {
+  if (bytes.length !== 4) {
+      throw new Error('There must be 4 bytes in the input array');
+  }
+
+  const buffer = new ArrayBuffer(4);
+  const view = new DataView(buffer);
+
+  // Write the bytes to the buffer
+  bytes.forEach((b, i) => view.setUint8(i, b));
+
+  // Get back the bytes as an integer
+  return view.getInt32(0, false); // Change to true for little endian encoding
+}
+
+function bytesToString(bytes) {
+  const textDecoder = new TextDecoder();
+  return textDecoder.decode(new Uint8Array(bytes));
+}
+
+function groupBy(array, groupSize) {
+    let groups = [];
+    for(let i = 0; i < array.length; i += groupSize) {
+        groups.push(array.slice(i, i + groupSize));
+    }
+    return groups;
+}
+
+function readFileSVG(file) {
+  var reader = new FileReader();
+  reader.readAsText(file);
+
+  reader.onloadend = event => {
+    let text = reader.result;
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "image/svg+xml");
+    const svg = doc.querySelector("svg");
+    const pls = flattenSVG(svg, { maxError: 0.001 }).map(x => x.points)
+
+    
+    // scale(pls, 0.1, [0, 0]);
+    // const center = getCenter(pls.flat());
+    // translate(pls, [8, 5], center);
+    // console.log(center, pls);
+
+    const cmds = ["IN;", "SP1;"];
+
+    const scale = 40*25.4; // 10/720*25.4*40; // 40*25.4;
+
+    pls.forEach(pl => {
+      cmds.push(`PU;`)
+      pl.forEach((pt, i) => {
+        cmds.push(`PA${(pt[0]*scale).toFixed(0)},${(pt[1]*scale).toFixed(0)};`);
+        if (i === 0) cmds.push(`PD;`);
+      })
+    })
+
+    cmds.push("PU;");
+    cmds.push("SP0;")
+    cmds.push("PA0,0;")
+
+    const ta = document.querySelector("textarea");
+    ta.value = `[\n${cmds.map(x => `"${x}"`).join(",\n")}\n]`;
+
+  }
+
+
+}
+
+  const dropArea = document.querySelector("#drop-area");
+dropArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    var file = e.dataTransfer.files[0];
+    console.log(file);
+    readFileSVG(file);
+});
+
+// Prevent default drag behaviors
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, preventDefaults, false);
+});
+
+  
+['dragenter', 'dragover'].forEach(eventName => {
+    dropArea.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.add('hover');
+    }, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.classList.remove('hover');
+    }, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function rotatePt(pt, origin, angle) {
+  let delta = angle / 180 * Math.PI;
+
+  let hereX = pt[0] - origin[0];
+  let hereY = pt[1] - origin[1];
+
+  let newPoint = [
+    hereX * Math.cos(delta) - hereY * Math.sin(delta) + origin[0],
+    hereY * Math.cos(delta) + hereX * Math.sin(delta) + origin[1]
+  ];
+
+  return newPoint;
+}
+
+function scalePt(pt, origin, scale) {
+  const [xScale, yScale] = scale;
+  const [x, y] = origin;
+  const newPoint = [
+    ((pt[0]-x) * xScale) + x,
+    ((pt[1]-y) * yScale) + y
+  ];
+
+  return newPoint;
+}
+
+function getCenter(pts) {
+  const {xMax, xMin, yMax, yMin} = extrema(pts);
+  
+  let middX = (xMax + xMin) / 2;
+  let middY = (yMax + yMin) / 2;
+
+  return [middX, middY];
+}
+
+function extrema(pts) {
+  let xMin = Number.POSITIVE_INFINITY;
+  let xMax = Number.NEGATIVE_INFINITY;
+  let yMin = Number.POSITIVE_INFINITY;
+  let yMax = Number.NEGATIVE_INFINITY;
+
+  pts.forEach(p => {
+    const [ x, y ] = p;
+    
+    if (xMin > x) xMin = x;
+    if (xMax < x) xMax = x;
+    if (yMin > y) yMin = y;
+    if (yMax < y) yMax = y;
+  });
+
+  return {
+    xMin,
+    xMax,
+    yMin,
+    yMax
+  };
+}
+
+const translate = (shape, toPoint, fromPoint = [ 0, 0 ] ) => {
+
+  const [ x0, y0 ] = fromPoint;
+  const [ x1, y1 ] = toPoint;
+  const x = x1 - x0;
+  const y = y1 - y0;
+
+  const fn = point => [
+    point[0] + x,
+    point[1] + y
+  ]
+  
+  return applyFn(shape, fn);
+}
+
+const scale = (shape, scaleXY, point) => {
+  if (shape.length === 0) return shape;
+  // if (!point) point = getPoint(shape, "cc");
+  const [ x, y ] = point;
+
+  if (typeof scaleXY === "number") scaleXY = [ scaleXY, scaleXY ];
+
+  const [ xScale, yScale ] = scaleXY;
+
+  const fn = p => {
+
+    const newPoint = [
+      ((p[0]-x) * xScale) + x,
+      ((p[1]-y) * yScale) + y
+    ];
+
+    return newPoint;
+  };
+
+  return applyFn(shape, fn);
+}
+
+const rotate = (shape, angle, point) => {
+  // if (!point) point = getPoint(shape, "cc");
+
+  const fn = p => {
+
+    let delta = angle / 180 * Math.PI;
+
+    let hereX = p[0] - point[0];
+    let hereY = p[1] - point[1];
+
+    let newPoint = [
+      hereX * Math.cos(delta) - hereY * Math.sin(delta) + point[0],
+      hereY * Math.cos(delta) + hereX * Math.sin(delta) + point[1]
+    ];
+
+    return newPoint;
+  }
+
+
+  return applyFn(shape, fn);
+}
+
+
+const applyFn = (shape, fn) => {
+  shape.forEach((pl, i) => {
+    shape[i] = pl.map(fn);
+  })
+
+  return shape;
+}
+
+  let wakeLock = null;
+
+async function requestWakeLock() {
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        console.log('Wake Lock acquired');
+        
+        wakeLock.addEventListener('release', () => {
+            console.log('Wake Lock released');
+        });
+    } catch (err) {
+        console.error(`Could not acquire wake lock: ${err.name}, ${err.message}`);
+    }
+}
+requestWakeLock();
+
+</script>
