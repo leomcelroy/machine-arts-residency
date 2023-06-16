@@ -290,7 +290,7 @@ function readFileSVG(file) {
 
     const cmds = ["IN;", "SP1;"];
 
-    const scale = 40*25.4; // 10/720*25.4*40; // 40*25.4;
+    const scale = 10/720*25.4*40; // 40*25.4;
 
     pls.forEach(pl => {
       cmds.push(`PU;`)
