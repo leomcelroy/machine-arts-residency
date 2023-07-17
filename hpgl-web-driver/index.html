@@ -49,7 +49,10 @@
 
 <main>
   <button class="connect">connect</button>
-  <div><span>width (in):</span><input value="15.75" type="number"/></div>
+  <div style="display:flex; justify-content: space-around;">
+    <div><span>width (in):</span><input value="15.75" type="number"/></div>
+    <span>connected: <span class="is-connected">false</span></span>
+  </div>
   <textarea>
   [
     "IN;",
@@ -69,7 +72,7 @@
     <div id="drop-area">drop svg here (should be in landscape)</div>
     <svg width="100%" height="100%" viewBox="-1 -1 19 13" xmlns="http://www.w3.org/2000/svg">
       <rect stroke-width="0.1pt" x="0" y="0" width="17" height="11" fill="none" stroke="black"/>
-      <path class="hpgl-path" d="M0 0" vector-effect="non-scaling-stroke" stroke="black" fill="none" stroke-width="0.1pt"/>
+      <path class="hpgl-path" d="M0 0" vector-effect="non-scaling-stroke" stroke="black" fill="none" stroke-width=".5pt"/>
   </svg>
   </div>
 </main>
@@ -116,17 +119,23 @@ async function sendCmds(cmds, maxCmds = 1) {
 
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
-    console.log("sending", group);
     let bytes = group.join("");
     bytes = strToBytes(bytes);
     
-    if (coms) await send(bytes);
+    if (coms) {
+      console.log("sending", group);
+      await send(bytes);
+    }
   }  
+
+  console.log("done")
 }
 
 async function main() {
   const port = await navigator.serial.requestPort();
   coms = await createWebSerialBuffer(port);
+
+  document.querySelector(".is-connected").innerHTML = "true";
 
   const TERMINATOR = 13;
   let msg = [];
@@ -150,7 +159,11 @@ async function main() {
 }
 
 document.querySelector(".connect").addEventListener("click", () => {
-  main();
+  try {
+    main();
+  } catch (err) {
+    document.querySelector(".is-connected").innerHTML = "false";
+  }
 })
 
   
@@ -197,6 +210,8 @@ async function createWebSerialBuffer(port, baudrate = 9600) {
     } catch (err) {
       console.error(err);
     } finally {
+      document.querySelector(".is-connected").innerHTML = "false";
+
       // await port.close();
     }
   }
@@ -206,7 +221,11 @@ async function createWebSerialBuffer(port, baudrate = 9600) {
   async function write(msg) {
     console.log("writing", msg);
     writer = port.writable.getWriter();
-    await writer.write(msg);
+    try {
+      await timeout(() => writer.write(msg), 5000);
+    } catch (err) {
+      console.error(err);
+    }
     writer.releaseLock();
     writer = null;
     console.log("wrote");
@@ -231,6 +250,21 @@ async function createWebSerialBuffer(port, baudrate = 9600) {
     }
   }
 } 
+
+function timeout(fn, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error('Operation timed out'));
+    }, ms);
+
+    fn()
+      .then(response => {
+        clearTimeout(timer);
+        resolve(response);
+      })
+      .catch(reject);
+  });
+}
 
 function bytesToFloat(bytes) {
     if (bytes.length !== 4) {
