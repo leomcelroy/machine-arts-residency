@@ -52,6 +52,7 @@
   <div style="display:flex; justify-content: space-around;">
     <div><span>width (in):</span><input value="15.75" type="number"/></div>
     <span>connected: <span class="is-connected">false</span></span>
+    <span>cmds sent: <span class="cmds-sent-numerator">0</span><span>/</span><span class="cmds-sent-denominator">0</span></span>
   </div>
   <textarea>
   [
@@ -117,6 +118,8 @@ async function sendCmds(cmds, maxCmds = 1) {
 
   const groups = groupBy(formatted, maxCmds);
 
+  document.querySelector(".cmds-sent-denominator").innerHTML = groups.length;
+
   for (let i = 0; i < groups.length; i++) {
     const group = groups[i];
     let bytes = group.join("");
@@ -125,6 +128,7 @@ async function sendCmds(cmds, maxCmds = 1) {
     if (coms) {
       console.log("sending", group);
       await send(bytes);
+      document.querySelector(".cmds-sent-numerator").innerHTML = i+1;
     }
   }  
 
@@ -415,6 +419,10 @@ function readFileSVG(file) {
 
     const ta = document.querySelector("textarea");
     ta.value = `[\n${cmds.map(x => `"${x}"`).join(",\n")}\n]`;
+
+
+    document.querySelector(".cmds-sent-denominator").innerHTML = cmds.length;
+    document.querySelector(".cmds-sent-numerator").innerHTML = 0;
 
   }
 
