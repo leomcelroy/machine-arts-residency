@@ -21,10 +21,15 @@
     resize: none;
   }
 
+  .bottom {
+    height: 40%;
+    display: flex;
+  }
+
   #drop-area {
       border: 2px dashed #ccc;
-      width: 95%;
-      height: 40%;
+      width: 50%;
+      height: 100%;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -36,10 +41,15 @@
   #drop-area.hover {
     background: lightgrey;
   }
+
+  svg {
+    width: 50%;
+  }
 </style>
 
 <main>
   <button class="connect">connect</button>
+  <div><span>width (in):</span><input value="17" type="number"/></div>
   <textarea>
   [
     "IN;",
@@ -55,7 +65,13 @@
   ]
   </textarea>
   <button class="send">send</button>
-  <div id="drop-area">Drop svg here</div>
+  <div class="bottom">
+    <div id="drop-area">drop svg here (should be in landscape)</div>
+    <svg width="100%" height="100%" viewBox="-1 -1 19 13" xmlns="http://www.w3.org/2000/svg">
+      <rect stroke-width="0.1pt" x="0" y="0" width="17" height="11" fill="none" stroke="black"/>
+      <path class="hpgl-path" d="M0 0" stroke="black" fill="none" stroke-width="0.1pt"/>
+  </svg>
+  </div>
 </main>
 
 <script defer type="module">
@@ -270,6 +286,8 @@ function groupBy(array, groupSize) {
     return groups;
 }
 
+let targetWidth = 15.75;
+
 function readFileSVG(file) {
   var reader = new FileReader();
   reader.readAsText(file);
@@ -280,25 +298,77 @@ function readFileSVG(file) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(text, "image/svg+xml");
     const svg = doc.querySelector("svg");
-    const pls = flattenSVG(svg, { maxError: 0.001 }).map(x => x.points)
+    const flattened = flattenSVG(svg, { maxError: 0.001 });
+    const pls = flattened.map(x => x.points);
 
-    
-    // scale(pls, 0.1, [0, 0]);
-    // const center = getCenter(pls.flat());
-    // translate(pls, [8, 5], center);
+    // const pts = [];
+
+    let xMin = Number.POSITIVE_INFINITY;
+    let xMax = Number.NEGATIVE_INFINITY;
+    let yMin = Number.POSITIVE_INFINITY;
+    let yMax = Number.NEGATIVE_INFINITY;
+
+    pls.forEach(pl => {
+      pl.forEach(pt => {
+        const [ x, y ] = pt;
+        
+        if (xMin > x) xMin = x;
+        if (xMax < x) xMax = x;
+        if (yMin > y) yMin = y;
+        if (yMax < y) yMax = y;
+
+        // pts.push(pt);
+      });
+    });
+
+
+    const width = (xMax - xMin);
+    const height = (yMax - yMin);
+
+    // const targetWidth = 17;
+    const ratio = targetWidth/width;
+
+    console.log({ 
+      svg, 
+      flattened, 
+      xMin, 
+      xMax, 
+      yMin, 
+      yMax, 
+      width, 
+      height, 
+      ratio, 
+      targetWidth,
+      pls
+    });
+
+    const scaleFactor = ratio;
+
+    scale(pls, scaleFactor, [0, 0]);
+    const center = getCenter(pls.flat());
+    translate(pls, [17/2, 11/2], center);
     // console.log(center, pls);
 
-    const cmds = ["IN;", "SP1;"];
+    // render to svg
+    const d = generateSvgPath(pls.flat());
 
-    const scale = 10/720*25.4*40; // 40*25.4;
+    const pc = document.querySelector(".hpgl-path");
+    pc.setAttribute("d", d);
+
+    const cmds = ["IN;", "SP1;"];
 
     pls.forEach(pl => {
       cmds.push(`PU;`)
       pl.forEach((pt, i) => {
-        cmds.push(`PA${(pt[0]*scale).toFixed(0)},${(pt[1]*scale).toFixed(0)};`);
+
+        // 40 units / millimiter
+        const [x , y] = pt.map(n => n*25.4*40);
+        cmds.push(`PA${x.toFixed(0)},${y.toFixed(0)};`);
         if (i === 0) cmds.push(`PD;`);
       })
-    })
+    });
+
+
 
     cmds.push("PU;");
     cmds.push("SP0;")
@@ -311,6 +381,19 @@ function readFileSVG(file) {
 
 
 }
+
+function generateSvgPath(points) {
+  return points.map((point, index) => {
+      const [x, y] = point;
+      return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
+  }).join(' ');
+}
+
+const targetWidthInput = document.querySelector("input");
+targetWidthInput.addEventListener("input", e => {
+  const val = Number(e.target.value);
+  targetWidth = val;
+})
 
   const dropArea = document.querySelector("#drop-area");
 dropArea.addEventListener('drop', function(e) {
