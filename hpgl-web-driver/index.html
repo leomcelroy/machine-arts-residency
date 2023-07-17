@@ -350,7 +350,12 @@ function readFileSVG(file) {
     // console.log(center, pls);
 
     // render to svg
-    const d = generateSvgPath(pls.flat());
+    let d = "";
+    pls.forEach(pl => pl.forEach((pt, i) => {
+      const [ x, y ] = pt;
+      if (i === 0) d += `M ${x} ${y}`;
+      else d += `L ${x} ${y}`;
+    }))
 
     const pc = document.querySelector(".hpgl-path");
     pc.setAttribute("d", d);
@@ -380,13 +385,6 @@ function readFileSVG(file) {
   }
 
 
-}
-
-function generateSvgPath(points) {
-  return points.map((point, index) => {
-      const [x, y] = point;
-      return `${index === 0 ? 'M' : 'L'}${x} ${y}`;
-  }).join(' ');
 }
 
 const targetWidthInput = document.querySelector("input");
