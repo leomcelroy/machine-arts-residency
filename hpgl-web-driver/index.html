@@ -339,7 +339,6 @@ function readFileSVG(file) {
     const flattened = flattenSVG(svg, { maxError: 0.001 });
     const pls = flattened.map(x => x.points);
 
-    // const pts = [];
 
     let xMin = Number.POSITIVE_INFINITY;
     let xMax = Number.NEGATIVE_INFINITY;
@@ -355,7 +354,6 @@ function readFileSVG(file) {
         if (yMin > y) yMin = y;
         if (yMax < y) yMax = y;
 
-        // pts.push(pt);
       });
     });
 
@@ -363,7 +361,6 @@ function readFileSVG(file) {
     const width = (xMax - xMin);
     const height = (yMax - yMin);
 
-    // const targetWidth = 17;
     const ratio = targetWidth/width;
 
     console.log({ 
